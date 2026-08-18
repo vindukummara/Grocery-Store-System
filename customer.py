@@ -1,107 +1,235 @@
 import streamlit as st
 import pandas as pd
-import os
+
+from database import get_connection
 
 
 def customer():
 
-    st.title("👥 Customer Management")
+    st.header("👥 Customer Management")
 
-    # Create customers.csv if it doesn't exist
-    if not os.path.exists("customers.csv"):
-        df = pd.DataFrame(columns=[
-            "CustomerID",
-            "Name",
-            "Phone",
-            "Address"
-        ])
-        df.to_csv("customers.csv", index=False)
+    # =====================================================
+    # TABS
+    # =====================================================
 
-    customers = pd.read_csv("customers.csv")
-
-    # -----------------------------
-    # Add Customer
-    # -----------------------------
-
-    st.subheader("➕ Add Customer")
-
-    customer_id = st.number_input(
-        "Customer ID",
-        min_value=1,
-        step=1
+    tab1, tab2, tab3 = st.tabs(
+        [
+            "➕ Add Customer",
+            "📋 View Customers",
+            "🗑️ Delete Customer"
+        ]
     )
 
-    name = st.text_input("Customer Name")
+    # =====================================================
+    # ADD CUSTOMER
+    # =====================================================
 
-    phone = st.text_input("Phone Number")
+    with tab1:
 
-    address = st.text_area("Address")
+        st.subheader("➕ Add Customer")
 
-    if st.button("Add Customer"):
+        customer_id = st.number_input(
+            "Customer ID",
+            min_value=1,
+            step=1
+        )
 
-        if customer_id in customers["CustomerID"].values:
-            st.error("❌ Customer ID already exists.")
+        name = st.text_input(
+            "Customer Name"
+        )
 
-        elif name.strip() == "":
-            st.warning("Please enter the customer name.")
+        phone = st.text_input(
+            "Phone Number"
+        )
+
+        address = st.text_area(
+            "Address"
+        )
+
+        if st.button(
+            "➕ Add Customer",
+            key="add_customer"
+        ):
+
+            if name.strip() == "":
+                st.warning(
+                    "⚠️ Please enter customer name."
+                )
+
+                return
+
+            conn = get_connection()
+            cursor = conn.cursor()
+
+            # Check Customer ID
+            cursor.execute(
+                """
+                SELECT CustomerID
+                FROM customers
+                WHERE CustomerID = ?
+                """,
+                (customer_id,)
+            )
+
+            existing_customer = cursor.fetchone()
+
+            if existing_customer:
+
+                st.error(
+                    "❌ Customer ID already exists."
+                )
+
+            else:
+
+                cursor.execute(
+                    """
+                    INSERT INTO customers
+                    (
+                        CustomerID,
+                        Name,
+                        Phone,
+                        Address
+                    )
+                    VALUES (?, ?, ?, ?)
+                    """,
+                    (
+                        customer_id,
+                        name,
+                        phone,
+                        address
+                    )
+                )
+
+                conn.commit()
+
+                st.success(
+                    "✅ Customer added successfully!"
+                )
+
+            conn.close()
+
+    # =====================================================
+    # VIEW CUSTOMERS
+    # =====================================================
+
+    with tab2:
+
+        st.subheader("📋 Customer List")
+
+        conn = get_connection()
+
+        customers = pd.read_sql_query(
+            """
+            SELECT
+                CustomerID,
+                Name,
+                Phone,
+                Address
+            FROM customers
+            ORDER BY CustomerID
+            """,
+            conn
+        )
+
+        conn.close()
+
+        if customers.empty:
+
+            st.info(
+                "📦 No customers found."
+            )
 
         else:
 
-            new_customer = pd.DataFrame({
-
-                "CustomerID": [customer_id],
-                "Name": [name],
-                "Phone": [phone],
-                "Address": [address]
-
-            })
-
-            customers = pd.concat(
-                [customers, new_customer],
-                ignore_index=True
+            st.dataframe(
+                customers,
+                use_container_width=True
             )
 
-            customers.to_csv(
-                "customers.csv",
-                index=False
+            st.success(
+                f"✅ {len(customers)} customer(s) found."
             )
 
-            st.success("✅ Customer Added Successfully!")
+    # =====================================================
+    # DELETE CUSTOMER
+    # =====================================================
 
-    st.markdown("---")
+    with tab3:
 
-    # -----------------------------
-    # Search Customer
-    # -----------------------------
+        st.subheader("🗑️ Delete Customer")
 
-    st.subheader("🔍 Search Customer")
+        conn = get_connection()
+        cursor = conn.cursor()
 
-    search = st.text_input("Enter Customer Name")
-
-    if search:
-
-        result = customers[
-            customers["Name"].str.contains(
-                search,
-                case=False,
-                na=False
-            )
-        ]
-
-        st.dataframe(
-            result,
-            use_container_width=True
+        cursor.execute(
+            """
+            SELECT CustomerID, Name
+            FROM customers
+            ORDER BY CustomerID
+            """
         )
 
-    st.markdown("---")
+        customers = cursor.fetchall()
 
-    # -----------------------------
-    # Customer List
-    # -----------------------------
+        conn.close()
 
-    st.subheader("📋 Customer List")
+        if not customers:
 
-    st.dataframe(
-        customers,
-        use_container_width=True
-    )
+            st.info(
+                "📦 No customers available."
+            )
+
+        else:
+
+            customer_options = {
+                f"{customer_id} - {name}": customer_id
+                for customer_id, name in customers
+            }
+
+            selected_customer = st.selectbox(
+                "Select Customer",
+                list(customer_options.keys()),
+                key="delete_customer_select"
+            )
+
+            selected_id = customer_options[
+                selected_customer
+            ]
+
+            confirm = st.checkbox(
+                "I confirm that I want to delete this customer.",
+                key="delete_customer_confirm"
+            )
+
+            if st.button(
+                "🗑️ Delete Customer",
+                key="delete_customer"
+            ):
+
+                if not confirm:
+
+                    st.warning(
+                        "⚠️ Please confirm before deleting."
+                    )
+
+                else:
+
+                    conn = get_connection()
+                    cursor = conn.cursor()
+
+                    cursor.execute(
+                        """
+                        DELETE FROM customers
+                        WHERE CustomerID = ?
+                        """,
+                        (selected_id,)
+                    )
+
+                    conn.commit()
+                    conn.close()
+
+                    st.success(
+                        "✅ Customer deleted successfully!"
+                    )
+
+                    st.rerun()

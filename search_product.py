@@ -2,69 +2,119 @@ import streamlit as st
 import pandas as pd
 import os
 
+from database import get_connection
+
 
 def search_product():
 
-    st.title("🔍 Search Product")
+    st.header("🔍 Search Product")
 
-    # Check if products.csv exists
-    if not os.path.exists("products.csv"):
-        st.warning("products.csv not found.")
-        return
+    # -----------------------------
+    # Search Input
+    # -----------------------------
+    search_text = st.text_input(
+        "Enter product name or category"
+    )
 
-    products = pd.read_csv("products.csv")
+    if st.button("🔍 Search"):
 
-    if products.empty:
-        st.warning("No products available.")
-        return
-
-    # Search box
-    search = st.text_input("Enter Product Name")
-
-    if st.button("Search"):
-
-        if search.strip() == "":
-            st.warning("Please enter a product name.")
+        if search_text.strip() == "":
+            st.warning("⚠️ Please enter a product name or category.")
             return
 
-        result = products[
-            products["Product"].str.contains(
-                search,
-                case=False,
-                na=False
+        conn = get_connection()
+
+        query = """
+            SELECT
+                ProductID,
+                Product,
+                Category,
+                Price,
+                Stock,
+                Image
+            FROM products
+            WHERE Product LIKE ?
+               OR Category LIKE ?
+            ORDER BY ProductID
+        """
+
+        search_value = f"%{search_text}%"
+
+        products = pd.read_sql_query(
+            query,
+            conn,
+            params=(search_value, search_value)
+        )
+
+        conn.close()
+
+        # -----------------------------
+        # Search Results
+        # -----------------------------
+        if products.empty:
+
+            st.warning(
+                f"❌ No products found for '{search_text}'."
             )
-        ]
 
-        if result.empty:
-            st.error("❌ Product not found.")
+            return
 
-        else:
+        st.success(
+            f"✅ {len(products)} product(s) found."
+        )
 
-            st.success(f"✅ {len(result)} Product(s) Found")
+        # -----------------------------
+        # Display Products
+        # -----------------------------
+        for _, product in products.iterrows():
 
-            for _, row in result.iterrows():
+            col1, col2 = st.columns([1, 3])
 
-                st.markdown("---")
+            with col1:
 
-                col1, col2 = st.columns([1, 3])
+                image_path = product["Image"]
 
-                with col1:
+                if (
+                    image_path
+                    and isinstance(image_path, str)
+                    and os.path.exists(image_path)
+                ):
 
-                    image_path = row["Image"]
+                    st.image(
+                        image_path,
+                        width=120
+                    )
 
-                    if (
-                        isinstance(image_path, str)
-                        and image_path != ""
-                        and os.path.exists(image_path)
-                    ):
-                        st.image(image_path, width=150)
-                    else:
-                        st.write("No Image")
+                else:
 
-                with col2:
+                    st.write("🖼️ No Image")
 
-                    st.write(f"**Product ID:** {row['ProductID']}")
-                    st.write(f"**Product:** {row['Product']}")
-                    st.write(f"**Category:** {row['Category']}")
-                    st.write(f"**Price:** ₹{row['Price']}")
-                    st.write(f"**Stock:** {row['Stock']}")
+            with col2:
+
+                st.subheader(
+                    f"{product['ProductID']} - {product['Product']}"
+                )
+
+                st.write(
+                    f"**Category:** {product['Category']}"
+                )
+
+                st.write(
+                    f"**Price:** ₹{product['Price']:.2f}"
+                )
+
+                st.write(
+                    f"**Stock:** {product['Stock']}"
+                )
+
+            st.markdown("---")
+
+        # -----------------------------
+        # Results Table
+        # -----------------------------
+        st.subheader("📊 Search Results")
+
+        st.dataframe(
+            products,
+            use_container_width=True
+        )

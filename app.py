@@ -1,28 +1,6 @@
 import streamlit as st
 
-# =====================================================
-# PAGE CONFIGURATION
-# =====================================================
-
-st.set_page_config(
-    page_title="Grocery Store Management System",
-    page_icon="🛒",
-    layout="wide"
-)
-
-
-# =====================================================
-# SESSION STATE
-# =====================================================
-
-if "logged_in" not in st.session_state:
-    st.session_state.logged_in = False
-
-
-# =====================================================
-# IMPORT MODULES
-# =====================================================
-
+from database import create_tables
 from login import login
 from logout import logout
 from dashboard import dashboard
@@ -39,11 +17,42 @@ from supplier import supplier
 
 
 # =====================================================
-# LOGIN
+# PAGE CONFIGURATION
+# =====================================================
+
+st.set_page_config(
+    page_title="Grocery Store Management System",
+    page_icon="🛒",
+    layout="wide"
+)
+
+
+# =====================================================
+# CREATE DATABASE TABLES
+# =====================================================
+
+create_tables()
+
+
+# =====================================================
+# INITIALIZE SESSION STATE
+# =====================================================
+
+if "logged_in" not in st.session_state:
+    st.session_state.logged_in = False
+
+if "username" not in st.session_state:
+    st.session_state.username = ""
+
+
+# =====================================================
+# LOGIN PAGE
 # =====================================================
 
 if not st.session_state.logged_in:
+
     login()
+
     st.stop()
 
 
@@ -52,9 +61,17 @@ if not st.session_state.logged_in:
 # =====================================================
 
 st.sidebar.title("🛒 Grocery Store")
-st.sidebar.success("Welcome Admin")
 
-menu = st.sidebar.radio(
+st.sidebar.success(
+    f"Welcome, {st.session_state.username}"
+)
+
+
+# =====================================================
+# MENU
+# =====================================================
+
+menu = st.sidebar.selectbox(
     "Select Module",
     [
         "🏠 Dashboard",
@@ -66,23 +83,15 @@ menu = st.sidebar.radio(
         "🛒 Billing",
         "📉 Low Stock",
         "📊 Sales Report",
-        "👥 Customer Management",
-        "🚚 Supplier Management",
+        "👥 Customers",
+        "🚚 Suppliers",
         "🚪 Logout"
     ]
 )
 
 
 # =====================================================
-# MAIN TITLE
-# =====================================================
-
-st.title("🛒 Grocery Store Management System")
-st.markdown("---")
-
-
-# =====================================================
-# MODULE NAVIGATION
+# DASHBOARD
 # =====================================================
 
 if menu == "🏠 Dashboard":
@@ -90,55 +99,99 @@ if menu == "🏠 Dashboard":
     dashboard()
 
 
+# =====================================================
+# ADD PRODUCT
+# =====================================================
+
 elif menu == "➕ Add Product":
 
     add_product()
 
+
+# =====================================================
+# VIEW PRODUCTS
+# =====================================================
 
 elif menu == "📋 View Products":
 
     view_products()
 
 
+# =====================================================
+# UPDATE PRODUCT
+# =====================================================
+
 elif menu == "✏️ Update Product":
 
     update_product()
 
+
+# =====================================================
+# DELETE PRODUCT
+# =====================================================
 
 elif menu == "🗑️ Delete Product":
 
     delete_product()
 
 
+# =====================================================
+# SEARCH PRODUCT
+# =====================================================
+
 elif menu == "🔍 Search Product":
 
     search_product()
 
+
+# =====================================================
+# BILLING
+# =====================================================
 
 elif menu == "🛒 Billing":
 
     billing()
 
 
+# =====================================================
+# LOW STOCK
+# =====================================================
+
 elif menu == "📉 Low Stock":
 
     low_stock()
 
+
+# =====================================================
+# SALES REPORT
+# =====================================================
 
 elif menu == "📊 Sales Report":
 
     sales_report()
 
 
-elif menu == "👥 Customer Management":
+# =====================================================
+# CUSTOMER MANAGEMENT
+# =====================================================
+
+elif menu == "👥 Customers":
 
     customer()
 
 
-elif menu == "🚚 Supplier Management":
+# =====================================================
+# SUPPLIER MANAGEMENT
+# =====================================================
+
+elif menu == "🚚 Suppliers":
 
     supplier()
 
+
+# =====================================================
+# LOGOUT
+# =====================================================
 
 elif menu == "🚪 Logout":
 

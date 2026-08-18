@@ -1,67 +1,93 @@
 import streamlit as st
-import pandas as pd
-import os
+from database import get_connection
 
 
 def delete_product():
 
-    st.title("🗑️ Delete Product")
+    st.header("🗑️ Delete Product")
 
-    # Check if products.csv exists
-    if not os.path.exists("products.csv"):
-        st.warning("products.csv not found.")
+    # Get products
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        SELECT ProductID, Product, Category, Price, Stock
+        FROM products
+        ORDER BY ProductID
+    """)
+
+    products = cursor.fetchall()
+    conn.close()
+
+    if not products:
+        st.info("📦 No products available.")
         return
 
-    products = pd.read_csv("products.csv")
+    # Product selection
+    product_options = {
+        f"{product_id} - {product_name}": product_id
+        for product_id, product_name, category, price, stock in products
+    }
 
-    if products.empty:
-        st.warning("No products available.")
-        return
-
-    # Select Product
-    product_id = st.selectbox(
-        "Select Product ID",
-        products["ProductID"]
+    selected_product = st.selectbox(
+        "Select Product to Delete",
+        list(product_options.keys())
     )
 
-    product = products[
-        products["ProductID"] == product_id
-    ].iloc[0]
+    product_id = product_options[selected_product]
 
-    st.subheader("Product Details")
+    # Show selected product
+    selected_data = next(
+        product for product in products
+        if product[0] == product_id
+    )
 
-    st.write(f"**Product ID:** {product['ProductID']}")
-    st.write(f"**Product Name:** {product['Product']}")
-    st.write(f"**Category:** {product['Category']}")
-    st.write(f"**Price:** ₹{product['Price']}")
-    st.write(f"**Stock:** {product['Stock']}")
+    st.write("### Product Details")
+    st.write(f"**Product:** {selected_data[1]}")
+    st.write(f"**Category:** {selected_data[2]}")
+    st.write(f"**Price:** ₹{selected_data[3]}")
+    st.write(f"**Stock:** {selected_data[4]}")
 
-    # Display Product Image
-    image_path = product["Image"]
+    st.warning(
+        "⚠️ Deleting this product cannot be undone."
+    )
 
-    if (
-        isinstance(image_path, str)
-        and image_path != ""
-        and os.path.exists(image_path)
-    ):
-        st.image(image_path, width=180)
+    # Confirmation
+    confirm = st.checkbox(
+        "I confirm that I want to delete this product."
+    )
 
-    st.warning("⚠️ This action cannot be undone.")
+    if st.button("🗑️ Delete Product", type="primary"):
 
-    if st.button("Delete Product"):
+        if not confirm:
+            st.warning(
+                "Please confirm the deletion first."
+            )
+            return
 
-        products = products[
-            products["ProductID"] != product_id
-        ]
+        try:
+            conn = get_connection()
+            cursor = conn.cursor()
 
-        products.to_csv(
-            "products.csv",
-            index=False
-        )
+            cursor.execute("""
+                DELETE FROM products
+                WHERE ProductID = ?
+            """, (product_id,))
 
-        st.success("✅ Product Deleted Successfully!")
+            conn.commit()
 
-        st.dataframe(
-            products,
-            use_container_width=True
-        )
+            if cursor.rowcount > 0:
+                st.success(
+                    "✅ Product deleted successfully!"
+                )
+            else:
+                st.error(
+                    "❌ Product could not be deleted."
+                )
+
+            conn.close()
+
+            st.rerun()
+
+        except Exception as e:
+            st.error(f"❌ Delete failed: {e}")

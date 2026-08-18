@@ -1,34 +1,30 @@
 import streamlit as st
-import pandas as pd
 import os
+
+from database import get_connection
 
 
 def add_product():
 
-    st.title("➕ Add Product")
+    st.header("➕ Add Product")
 
-    # Create products.csv if it doesn't exist
-    if not os.path.exists("products.csv"):
-        df = pd.DataFrame(columns=[
-            "ProductID",
-            "Product",
-            "Category",
-            "Price",
-            "Stock",
-            "Image"
-        ])
-        df.to_csv("products.csv", index=False)
-
-    products = pd.read_csv("products.csv")
-
+    # -----------------------------
+    # Product ID
+    # -----------------------------
     product_id = st.number_input(
         "Product ID",
         min_value=1,
         step=1
     )
 
+    # -----------------------------
+    # Product Name
+    # -----------------------------
     product_name = st.text_input("Product Name")
 
+    # -----------------------------
+    # Category
+    # -----------------------------
     category = st.selectbox(
         "Category",
         [
@@ -45,75 +41,114 @@ def add_product():
         ]
     )
 
+    # -----------------------------
+    # Price
+    # -----------------------------
     price = st.number_input(
-        "Price (₹)",
+        "Price",
         min_value=0.0,
         format="%.2f"
     )
 
+    # -----------------------------
+    # Stock
+    # -----------------------------
     stock = st.number_input(
-        "Stock Quantity",
+        "Stock",
         min_value=0,
         step=1
     )
 
+    # -----------------------------
+    # Product Image
+    # -----------------------------
     image = st.file_uploader(
         "Upload Product Image",
-        type=["jpg", "jpeg", "png"]
+        type=["png", "jpg", "jpeg"]
     )
 
     image_path = ""
 
     if image is not None:
 
-        # Create images folder
         if not os.path.exists("images"):
             os.makedirs("images")
 
-        image_path = os.path.join("images", image.name)
+        image_path = os.path.join(
+            "images",
+            image.name
+        )
 
-        with open(image_path, "wb") as f:
-            f.write(image.getbuffer())
+        with open(image_path, "wb") as file:
+            file.write(image.getbuffer())
 
-        st.image(image, width=200)
+        st.image(
+            image,
+            width=150
+        )
 
+    # -----------------------------
+    # Add Product
+    # -----------------------------
     if st.button("Add Product"):
 
-        # Check duplicate Product ID
-        if product_id in products["ProductID"].values:
-            st.error("❌ Product ID already exists.")
-
-        elif product_name.strip() == "":
-            st.warning("Please enter a product name.")
+        if product_name.strip() == "":
+            st.warning(
+                "⚠️ Please enter a product name."
+            )
 
         else:
 
-            new_product = pd.DataFrame({
+            conn = get_connection()
+            cursor = conn.cursor()
 
-                "ProductID": [product_id],
-                "Product": [product_name],
-                "Category": [category],
-                "Price": [price],
-                "Stock": [stock],
-                "Image": [image_path]
-
-            })
-
-            products = pd.concat(
-                [products, new_product],
-                ignore_index=True
+            # Check Product ID
+            cursor.execute(
+                """
+                SELECT ProductID
+                FROM products
+                WHERE ProductID = ?
+                """,
+                (product_id,)
             )
 
-            products.to_csv(
-                "products.csv",
-                index=False
-            )
+            existing_product = cursor.fetchone()
 
-            st.success("✅ Product Added Successfully!")
+            if existing_product:
 
-            st.subheader("Current Products")
+                st.error(
+                    "❌ Product ID already exists."
+                )
 
-            st.dataframe(
-                products,
-                use_container_width=True
-            )
+            else:
+
+                cursor.execute(
+                    """
+                    INSERT INTO products
+                    (
+                        ProductID,
+                        Product,
+                        Category,
+                        Price,
+                        Stock,
+                        Image
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        product_id,
+                        product_name,
+                        category,
+                        price,
+                        stock,
+                        image_path
+                    )
+                )
+
+                conn.commit()
+
+                st.success(
+                    "✅ Product Added Successfully!"
+                )
+
+            conn.close()

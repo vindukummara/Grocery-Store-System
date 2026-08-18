@@ -1,78 +1,117 @@
 import streamlit as st
 import pandas as pd
-import os
+
+from database import get_connection
 
 
 def low_stock():
 
-    st.title("📉 Low Stock Alert")
+    st.header("📉 Low Stock Alert")
 
-    # Check if products.csv exists
-    if not os.path.exists("products.csv"):
-        st.error("❌ products.csv not found.")
-        return
-
-    products = pd.read_csv("products.csv")
-
-    if products.empty:
-        st.warning("No products available.")
-        return
-
-    # User selects the low stock limit
-    threshold = st.slider(
-        "Select Low Stock Limit",
-        min_value=1,
-        max_value=50,
-        value=10
+    # -----------------------------
+    # Low Stock Limit
+    # -----------------------------
+    stock_limit = st.number_input(
+        "Show products with stock less than or equal to:",
+        min_value=0,
+        value=10,
+        step=1
     )
 
-    # Find low stock products
-    low_stock_products = products[
-        products["Stock"] <= threshold
-    ]
+    # -----------------------------
+    # Get Products from SQLite
+    # -----------------------------
+    conn = get_connection()
 
-    if low_stock_products.empty:
-        st.success("✅ No Low Stock Products.")
-    else:
-        st.warning(f"⚠️ {len(low_stock_products)} product(s) have low stock.")
+    query = """
+        SELECT
+            ProductID,
+            Product,
+            Category,
+            Price,
+            Stock,
+            Image
+        FROM products
+        WHERE Stock <= ?
+        ORDER BY Stock ASC
+    """
 
-        st.dataframe(
-            low_stock_products,
-            use_container_width=True
+    products = pd.read_sql_query(
+        query,
+        conn,
+        params=(stock_limit,)
+    )
+
+    conn.close()
+
+    # -----------------------------
+    # Display Results
+    # -----------------------------
+    if products.empty:
+
+        st.success(
+            "✅ No products have low stock."
         )
 
-        st.subheader("📦 Low Stock Products")
+        return
 
-        for _, row in low_stock_products.iterrows():
+    st.warning(
+        f"⚠️ {len(products)} product(s) have low stock."
+    )
 
-            st.markdown("---")
+    # -----------------------------
+    # Low Stock Table
+    # -----------------------------
+    st.dataframe(
+        products,
+        use_container_width=True
+    )
 
-            col1, col2 = st.columns([1, 3])
+    # -----------------------------
+    # Product Details
+    # -----------------------------
+    st.subheader("📦 Low Stock Products")
 
-            with col1:
+    for _, product in products.iterrows():
 
-                image_path = row["Image"]
+        col1, col2 = st.columns([1, 4])
 
-                if (
-                    isinstance(image_path, str)
-                    and image_path != ""
-                    and os.path.exists(image_path)
-                ):
-                    st.image(image_path, width=120)
-                else:
-                    st.write("No Image")
+        with col1:
 
-            with col2:
+            image_path = product["Image"]
 
-                st.write(f"**Product ID:** {row['ProductID']}")
-                st.write(f"**Product:** {row['Product']}")
-                st.write(f"**Category:** {row['Category']}")
-                st.write(f"**Price:** ₹{row['Price']}")
-                st.write(f"**Stock Remaining:** {row['Stock']}")
+            if (
+                image_path
+                and isinstance(image_path, str)
+            ):
 
-                if row["Stock"] == 0:
-                    st.error("❌ Out of Stock")
-                elif row["Stock"] <= 5:
-                    st.error("🔴 Critical Stock")
-                else:
-                    st.warning("🟡 Low Stock")
+                try:
+                    st.image(
+                        image_path,
+                        width=100
+                    )
+                except Exception:
+                    st.write("🖼️ No Image")
+
+            else:
+                st.write("🖼️ No Image")
+
+        with col2:
+
+            st.write(
+                f"**Product:** {product['Product']}"
+            )
+
+            st.write(
+                f"**Category:** {product['Category']}"
+            )
+
+            st.write(
+                f"**Price:** ₹{product['Price']:.2f}"
+            )
+
+            st.error(
+                f"⚠️ Stock: {product['Stock']}"
+            )
+
+        st.markdown("---")

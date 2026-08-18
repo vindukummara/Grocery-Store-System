@@ -1,110 +1,235 @@
 import streamlit as st
 import pandas as pd
-import os
+
+from database import get_connection
 
 
 def supplier():
 
-    st.title("🚚 Supplier Management")
+    st.header("🚚 Supplier Management")
 
-    # Create suppliers.csv if it doesn't exist
-    if not os.path.exists("suppliers.csv"):
-        df = pd.DataFrame(columns=[
-            "SupplierID",
-            "SupplierName",
-            "Phone",
-            "Address",
-            "Products"
-        ])
-        df.to_csv("suppliers.csv", index=False)
+    # =====================================================
+    # TABS
+    # =====================================================
 
-    suppliers = pd.read_csv("suppliers.csv")
-
-    # -----------------------------
-    # Add Supplier
-    # -----------------------------
-    st.subheader("➕ Add Supplier")
-
-    supplier_id = st.number_input(
-        "Supplier ID",
-        min_value=1,
-        step=1
+    tab1, tab2, tab3 = st.tabs(
+        [
+            "➕ Add Supplier",
+            "📋 View Suppliers",
+            "🗑️ Delete Supplier"
+        ]
     )
 
-    supplier_name = st.text_input("Supplier Name")
+    # =====================================================
+    # ADD SUPPLIER
+    # =====================================================
 
-    phone = st.text_input("Phone Number")
+    with tab1:
 
-    address = st.text_area("Address")
+        st.subheader("➕ Add Supplier")
 
-    products = st.text_input(
-        "Products Supplied"
-    )
+        supplier_id = st.number_input(
+            "Supplier ID",
+            min_value=1,
+            step=1
+        )
 
-    if st.button("Add Supplier"):
+        supplier_name = st.text_input(
+            "Supplier Name"
+        )
 
-        if supplier_id in suppliers["SupplierID"].values:
-            st.error("❌ Supplier ID already exists.")
+        phone = st.text_input(
+            "Phone Number"
+        )
 
-        elif supplier_name.strip() == "":
-            st.warning("Please enter the supplier name.")
+        address = st.text_area(
+            "Address"
+        )
+
+        if st.button(
+            "➕ Add Supplier",
+            key="add_supplier"
+        ):
+
+            if supplier_name.strip() == "":
+                st.warning(
+                    "⚠️ Please enter supplier name."
+                )
+
+                return
+
+            conn = get_connection()
+            cursor = conn.cursor()
+
+            # Check Supplier ID
+            cursor.execute(
+                """
+                SELECT SupplierID
+                FROM suppliers
+                WHERE SupplierID = ?
+                """,
+                (supplier_id,)
+            )
+
+            existing_supplier = cursor.fetchone()
+
+            if existing_supplier:
+
+                st.error(
+                    "❌ Supplier ID already exists."
+                )
+
+            else:
+
+                cursor.execute(
+                    """
+                    INSERT INTO suppliers
+                    (
+                        SupplierID,
+                        SupplierName,
+                        Phone,
+                        Address
+                    )
+                    VALUES (?, ?, ?, ?)
+                    """,
+                    (
+                        supplier_id,
+                        supplier_name,
+                        phone,
+                        address
+                    )
+                )
+
+                conn.commit()
+
+                st.success(
+                    "✅ Supplier added successfully!"
+                )
+
+            conn.close()
+
+    # =====================================================
+    # VIEW SUPPLIERS
+    # =====================================================
+
+    with tab2:
+
+        st.subheader("📋 Supplier List")
+
+        conn = get_connection()
+
+        suppliers = pd.read_sql_query(
+            """
+            SELECT
+                SupplierID,
+                SupplierName,
+                Phone,
+                Address
+            FROM suppliers
+            ORDER BY SupplierID
+            """,
+            conn
+        )
+
+        conn.close()
+
+        if suppliers.empty:
+
+            st.info(
+                "📦 No suppliers found."
+            )
 
         else:
 
-            new_supplier = pd.DataFrame({
-
-                "SupplierID": [supplier_id],
-                "SupplierName": [supplier_name],
-                "Phone": [phone],
-                "Address": [address],
-                "Products": [products]
-
-            })
-
-            suppliers = pd.concat(
-                [suppliers, new_supplier],
-                ignore_index=True
+            st.dataframe(
+                suppliers,
+                use_container_width=True
             )
 
-            suppliers.to_csv(
-                "suppliers.csv",
-                index=False
+            st.success(
+                f"✅ {len(suppliers)} supplier(s) found."
             )
 
-            st.success("✅ Supplier Added Successfully!")
+    # =====================================================
+    # DELETE SUPPLIER
+    # =====================================================
 
-    st.markdown("---")
+    with tab3:
 
-    # -----------------------------
-    # Search Supplier
-    # -----------------------------
-    st.subheader("🔍 Search Supplier")
+        st.subheader("🗑️ Delete Supplier")
 
-    search = st.text_input("Enter Supplier Name")
+        conn = get_connection()
+        cursor = conn.cursor()
 
-    if search:
-
-        result = suppliers[
-            suppliers["SupplierName"].str.contains(
-                search,
-                case=False,
-                na=False
-            )
-        ]
-
-        st.dataframe(
-            result,
-            use_container_width=True
+        cursor.execute(
+            """
+            SELECT SupplierID, SupplierName
+            FROM suppliers
+            ORDER BY SupplierID
+            """
         )
 
-    st.markdown("---")
+        suppliers = cursor.fetchall()
 
-    # -----------------------------
-    # Supplier List
-    # -----------------------------
-    st.subheader("📋 Supplier List")
+        conn.close()
 
-    st.dataframe(
-        suppliers,
-        use_container_width=True
-    )
+        if not suppliers:
+
+            st.info(
+                "📦 No suppliers available."
+            )
+
+        else:
+
+            supplier_options = {
+                f"{supplier_id} - {supplier_name}": supplier_id
+                for supplier_id, supplier_name in suppliers
+            }
+
+            selected_supplier = st.selectbox(
+                "Select Supplier",
+                list(supplier_options.keys()),
+                key="delete_supplier_select"
+            )
+
+            selected_id = supplier_options[
+                selected_supplier
+            ]
+
+            confirm = st.checkbox(
+                "I confirm that I want to delete this supplier.",
+                key="delete_supplier_confirm"
+            )
+
+            if st.button(
+                "🗑️ Delete Supplier",
+                key="delete_supplier"
+            ):
+
+                if not confirm:
+
+                    st.warning(
+                        "⚠️ Please confirm before deleting."
+                    )
+
+                else:
+
+                    conn = get_connection()
+                    cursor = conn.cursor()
+
+                    cursor.execute(
+                        """
+                        DELETE FROM suppliers
+                        WHERE SupplierID = ?
+                        """,
+                        (selected_id,)
+                    )
+
+                    conn.commit()
+                    conn.close()
+
+                    st.success(
+                        "✅ Supplier deleted successfully!"
+                    )
+
+                    st.rerun()

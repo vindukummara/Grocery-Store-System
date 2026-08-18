@@ -2,62 +2,95 @@ import streamlit as st
 import pandas as pd
 import os
 
+from database import get_connection
+
 
 def view_products():
 
-    st.title("📋 View Products")
+    st.header("📋 View Products")
 
-    # Check if products.csv exists
-    if not os.path.exists("products.csv"):
-        st.warning("No products available.")
-        return
+    conn = get_connection()
 
-    products = pd.read_csv("products.csv")
+    query = """
+        SELECT
+            ProductID,
+            Product,
+            Category,
+            Price,
+            Stock,
+            Image
+        FROM products
+        ORDER BY ProductID
+    """
+
+    products = pd.read_sql_query(query, conn)
+
+    conn.close()
 
     if products.empty:
-        st.warning("No products found.")
+
+        st.info("📦 No products found.")
+
         return
 
-    # Search Product
-    search = st.text_input("🔍 Search Product")
+    st.success(
+        f"✅ {len(products)} product(s) found."
+    )
 
-    if search:
-        products = products[
-            products["Product"].str.contains(search, case=False, na=False)
-        ]
+    # -----------------------------
+    # Display Products
+    # -----------------------------
 
-    st.subheader("📦 Product List")
-
-    st.dataframe(products, use_container_width=True)
-
-    st.write(f"**Total Products:** {len(products)}")
-
-    # Show product image
-    st.subheader("🖼️ Product Images")
-
-    for _, row in products.iterrows():
-
-        st.markdown("---")
+    for _, product in products.iterrows():
 
         col1, col2 = st.columns([1, 3])
 
         with col1:
 
-            image_path = row["Image"]
+            image_path = product["Image"]
 
             if (
-                isinstance(image_path, str)
-                and image_path != ""
+                image_path
+                and isinstance(image_path, str)
                 and os.path.exists(image_path)
             ):
-                st.image(image_path, width=120)
+
+                st.image(
+                    image_path,
+                    width=120
+                )
+
             else:
-                st.write("No Image")
+
+                st.write("🖼️ No Image")
 
         with col2:
 
-            st.write(f"**Product ID:** {row['ProductID']}")
-            st.write(f"**Product:** {row['Product']}")
-            st.write(f"**Category:** {row['Category']}")
-            st.write(f"**Price:** ₹{row['Price']}")
-            st.write(f"**Stock:** {row['Stock']}")
+            st.subheader(
+                f"{product['ProductID']} - {product['Product']}"
+            )
+
+            st.write(
+                f"**Category:** {product['Category']}"
+            )
+
+            st.write(
+                f"**Price:** ₹{product['Price']:.2f}"
+            )
+
+            st.write(
+                f"**Stock:** {product['Stock']}"
+            )
+
+        st.markdown("---")
+
+    # -----------------------------
+    # Table View
+    # -----------------------------
+
+    st.subheader("📊 Product Table")
+
+    st.dataframe(
+        products,
+        use_container_width=True
+    )

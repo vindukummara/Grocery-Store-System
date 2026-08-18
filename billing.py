@@ -1,147 +1,325 @@
 import streamlit as st
 import pandas as pd
-import os
 from datetime import datetime
 from reportlab.pdfgen import canvas
+
+from database import get_connection
 
 
 def billing():
 
-    st.title("🛒 Billing System")
+    st.header("🛒 Billing")
 
-    # Check products.csv
-    if not os.path.exists("products.csv"):
-        st.error("products.csv not found.")
-        return
+    # =====================================================
+    # GET PRODUCTS FROM SQLITE
+    # =====================================================
 
-    products = pd.read_csv("products.csv")
+    conn = get_connection()
+
+    products = pd.read_sql_query(
+        """
+        SELECT
+            ProductID,
+            Product,
+            Price,
+            Stock
+        FROM products
+        WHERE Stock > 0
+        ORDER BY Product
+        """,
+        conn
+    )
+
+    conn.close()
 
     if products.empty:
-        st.warning("No products available.")
+        st.warning("⚠️ No products available for billing.")
         return
 
-    # Create sales.csv if it doesn't exist
-    if not os.path.exists("sales.csv"):
-        sales = pd.DataFrame(columns=[
-            "Date",
-            "Time",
-            "Product",
-            "Quantity",
-            "Price",
-            "Total"
-        ])
-        sales.to_csv("sales.csv", index=False)
+    # =====================================================
+    # SELECT PRODUCT
+    # =====================================================
 
-    # Select Product
-    product_name = st.selectbox(
+    product_names = products["Product"].tolist()
+
+    selected_product = st.selectbox(
         "Select Product",
-        products["Product"]
+        product_names
     )
+
+    selected_row = products[
+        products["Product"] == selected_product
+    ].iloc[0]
+
+    product_id = int(selected_row["ProductID"])
+    price = float(selected_row["Price"])
+    available_stock = int(selected_row["Stock"])
+
+    st.write(f"**Price:** ₹{price:.2f}")
+    st.write(f"**Available Stock:** {available_stock}")
+
+    # =====================================================
+    # QUANTITY
+    # =====================================================
 
     quantity = st.number_input(
         "Quantity",
         min_value=1,
+        max_value=available_stock,
+        value=1,
         step=1
     )
 
-    if st.button("Generate Bill"):
+    total = price * quantity
 
-        product = products[
-            products["Product"] == product_name
-        ].iloc[0]
+    st.subheader(f"💰 Total: ₹{total:.2f}")
 
-        price = float(product["Price"])
-        stock = int(product["Stock"])
+    # =====================================================
+    # CREATE BILL
+    # =====================================================
 
-        # Check stock
-        if quantity > stock:
-            st.error("❌ Not enough stock available.")
+    if st.button("🧾 Generate Bill"):
+
+        # -----------------------------
+        # Check Stock Again
+        # -----------------------------
+
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute(
+            """
+            SELECT Stock, Price, Product
+            FROM products
+            WHERE ProductID = ?
+            """,
+            (product_id,)
+        )
+
+        current_product = cursor.fetchone()
+
+        if current_product is None:
+
+            conn.close()
+
+            st.error("❌ Product not found.")
             return
 
-        total = price * quantity
+        current_stock = int(current_product[0])
+        current_price = float(current_product[1])
+        current_name = current_product[2]
 
-        # Current Date & Time
-        today = datetime.now()
+        if quantity > current_stock:
 
-        date = today.strftime("%d-%m-%Y")
-        time = today.strftime("%H:%M:%S")
+            conn.close()
 
-        # Update Stock
-        products.loc[
-            products["Product"] == product_name,
-            "Stock"
-        ] = stock - quantity
+            st.error(
+                f"❌ Only {current_stock} item(s) available."
+            )
+            return
 
-        products.to_csv(
-            "products.csv",
-            index=False
+        # =================================================
+        # UPDATE STOCK
+        # =================================================
+
+        new_stock = current_stock - quantity
+
+        cursor.execute(
+            """
+            UPDATE products
+            SET Stock = ?
+            WHERE ProductID = ?
+            """,
+            (
+                new_stock,
+                product_id
+            )
         )
 
-        # Save Sale
-        sales = pd.read_csv("sales.csv")
+        # =================================================
+        # SAVE SALE
+        # =================================================
 
-        new_sale = pd.DataFrame({
+        now = datetime.now()
 
-            "Date": [date],
-            "Time": [time],
-            "Product": [product_name],
-            "Quantity": [quantity],
-            "Price": [price],
-            "Total": [total]
+        sale_date = now.strftime("%Y-%m-%d")
+        sale_time = now.strftime("%H:%M:%S")
 
-        })
+        sale_total = current_price * quantity
 
-        sales = pd.concat(
-            [sales, new_sale],
-            ignore_index=True
+        cursor.execute(
+            """
+            INSERT INTO sales
+            (
+                Date,
+                Time,
+                ProductID,
+                Quantity,
+                Price,
+                Total
+            )
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                sale_date,
+                sale_time,
+                product_id,
+                quantity,
+                current_price,
+                sale_total
+            )
         )
 
-        sales.to_csv(
-            "sales.csv",
-            index=False
-        )
+        conn.commit()
 
-        # Generate PDF Receipt
-        pdf = canvas.Canvas("receipt.pdf")
+        conn.close()
 
-        pdf.setTitle("Receipt")
+        # =================================================
+        # GENERATE PDF RECEIPT
+        # =================================================
+
+        receipt_file = "receipt.pdf"
+
+        pdf = canvas.Canvas(receipt_file)
+
+        pdf.setTitle("Grocery Store Receipt")
 
         pdf.setFont("Helvetica-Bold", 18)
-        pdf.drawString(150, 800, "Grocery Store")
 
-        pdf.setFont("Helvetica", 12)
+        pdf.drawString(
+            180,
+            800,
+            "GROCERY STORE"
+        )
 
-        pdf.drawString(50, 760, f"Date : {date}")
-        pdf.drawString(50, 740, f"Time : {time}")
+        pdf.setFont("Helvetica", 11)
 
-        pdf.drawString(50, 700, f"Product : {product_name}")
-        pdf.drawString(50, 680, f"Quantity : {quantity}")
-        pdf.drawString(50, 660, f"Price : ₹{price:.2f}")
-        pdf.drawString(50, 640, f"Total : ₹{total:.2f}")
+        pdf.drawString(
+            50,
+            770,
+            f"Date: {sale_date}"
+        )
 
-        pdf.drawString(50, 600, "Thank You For Shopping!")
+        pdf.drawString(
+            400,
+            770,
+            f"Time: {sale_time}"
+        )
+
+        pdf.line(
+            50,
+            750,
+            550,
+            750
+        )
+
+        pdf.setFont(
+            "Helvetica-Bold",
+            12
+        )
+
+        pdf.drawString(
+            50,
+            720,
+            "Product"
+        )
+
+        pdf.drawString(
+            300,
+            720,
+            "Quantity"
+        )
+
+        pdf.drawString(
+            400,
+            720,
+            "Price"
+        )
+
+        pdf.drawString(
+            480,
+            720,
+            "Total"
+        )
+
+        pdf.setFont(
+            "Helvetica",
+            11
+        )
+
+        pdf.drawString(
+            50,
+            690,
+            str(current_name)
+        )
+
+        pdf.drawString(
+            300,
+            690,
+            str(quantity)
+        )
+
+        pdf.drawString(
+            400,
+            690,
+            f"₹{current_price:.2f}"
+        )
+
+        pdf.drawString(
+            480,
+            690,
+            f"₹{sale_total:.2f}"
+        )
+
+        pdf.line(
+            50,
+            660,
+            550,
+            660
+        )
+
+        pdf.setFont(
+            "Helvetica-Bold",
+            14
+        )
+
+        pdf.drawString(
+            380,
+            630,
+            f"Total: ₹{sale_total:.2f}"
+        )
+
+        pdf.setFont(
+            "Helvetica",
+            11
+        )
+
+        pdf.drawString(
+            200,
+            580,
+            "Thank you for shopping with us!"
+        )
 
         pdf.save()
 
-        # Display Bill
-        st.success("✅ Bill Generated Successfully!")
+        # =================================================
+        # SUCCESS MESSAGE
+        # =================================================
 
-        st.subheader("Receipt")
+        st.success(
+            "✅ Bill generated successfully!"
+        )
 
-        st.write("📅 Date :", date)
-        st.write("🕒 Time :", time)
-        st.write("🛒 Product :", product_name)
-        st.write("📦 Quantity :", quantity)
-        st.write("💵 Price :", f"₹{price:.2f}")
-        st.write("💰 Total :", f"₹{total:.2f}")
+        st.info(
+            f"📦 Remaining stock: {new_stock}"
+        )
 
-        st.info("📄 receipt.pdf generated successfully.")
-
-        # Download PDF
-        with open("receipt.pdf", "rb") as pdf_file:
-            st.download_button(
-                label="⬇️ Download Receipt",
-                data=pdf_file,
-                file_name="receipt.pdf",
-                mime="application/pdf"
-            )
+        st.download_button(
+            label="📥 Download Receipt",
+            data=open(
+                receipt_file,
+                "rb"
+            ).read(),
+            file_name="receipt.pdf",
+            mime="application/pdf"
+        )
